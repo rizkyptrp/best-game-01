@@ -36,6 +36,13 @@ export function shopLayout() {
   };
 }
 
+/** The victory screen's Endless button, shared by drawing and click tests. */
+export function winLayout() {
+  return {
+    endless: { x: FIELD.width / 2 - 180, y: 556, w: 360, h: 52 },
+  };
+}
+
 /** A starfield and nebula painted once, at boot, on an offscreen canvas. */
 function paintBackdrop() {
   const rng = createRandom(1337);
@@ -678,7 +685,10 @@ export function createRenderer(canvas) {
       bar(28, 102, 90, 6, state.comboTimer / COMBO.window, PALETTE.cyan);
     }
     // Top-center: the wave and what is left of it.
-    text(`WAVE ${Math.max(1, state.wave)} / ${WAVES}`, FIELD.width / 2, 34, 22, PALETTE.text, 'center', 700);
+    text(
+      state.wave > WAVES ? `WAVE ${state.wave} · ENDLESS` : `WAVE ${Math.max(1, state.wave)} / ${WAVES}`,
+      FIELD.width / 2, 34, 22, PALETTE.text, 'center', 700,
+    );
     if (state.phase === 'combat') {
       text(`${ui.enemiesLeft} foes remain`, FIELD.width / 2, 60, 14, PALETTE.muted, 'center', 600);
     }
@@ -785,7 +795,7 @@ export function createRenderer(canvas) {
       text(label, FIELD.width / 2 - 300, y, 17, PALETTE.gold, 'left', 700);
       text(value, FIELD.width / 2 + 300, y, 17, PALETTE.text, 'right', 500, FONT.body);
     });
-    text('Survive 10 waves. Spend shards on upgrades between waves.', FIELD.width / 2, 552, 17, PALETTE.muted, 'center', 500, FONT.body);
+    text('Survive 10 waves. Spend shards on upgrades between waves — win to unlock Endless.', FIELD.width / 2, 552, 17, PALETTE.muted, 'center', 500, FONT.body);
     if (ui.best > 0) text(`BEST SCORE  ${ui.best.toLocaleString('en-US')}`, FIELD.width / 2, 584, 17, PALETTE.gold, 'center', 700);
     const blink = 0.78 + Math.sin(state.time * 3) * 0.22;
     ctx.globalAlpha = blink;
@@ -838,8 +848,9 @@ export function createRenderer(canvas) {
     const minutes = Math.floor(state.runTime / 60);
     const seconds = Math.floor(state.runTime % 60);
     const upgrades = Object.values(state.owned).reduce((n, c) => n + c, 0);
+    const cleared = state.phase === 'won' ? WAVES : Math.max(0, state.wave - (state.phase === 'shop' ? 0 : 1));
     const rows = [
-      ['Waves cleared', `${state.phase === 'won' ? WAVES : Math.max(0, state.wave - (state.phase === 'shop' ? 0 : 1))} / ${WAVES}`],
+      ['Waves cleared', cleared > WAVES ? String(cleared) : `${cleared} / ${WAVES}`],
       ['Foes slain', String(state.kills)],
       ['Best streak', `${state.comboBest} kills`],
       ['Shards gathered', String(state.shardsCollected)],
@@ -894,10 +905,15 @@ export function createRenderer(canvas) {
     text('The Hollow Maw is unmade. The crystal burns bright again.', FIELD.width / 2, 202, 18, PALETTE.text, 'center', 500, FONT.body);
     text(`SCORE  ${state.score.toLocaleString('en-US')}`, FIELD.width / 2, 262, 30, PALETTE.gold, 'center', 800);
     if (state.score >= ui.best && state.score > 0) text('★ A NEW BEST ★', FIELD.width / 2, 300, 17, PALETTE.gold, 'center', 700);
-    const after = statsGrid(state, 348);
+    const after = statsGrid(state, 336);
+    // Victory unlocks Endless: the waves keep coming, harder each time, for
+    // as long as the warden holds. The button is the way in; Space restarts.
+    const layout = winLayout();
+    panel(layout.endless.x, layout.endless.y, layout.endless.w, layout.endless.h, 12);
+    text('KEEP DEFENDING — ENDLESS  (E)  →', FIELD.width / 2, layout.endless.y + layout.endless.h / 2, 20, PALETTE.cyan, 'center', 800);
     const blink = 0.78 + Math.sin(state.time * 3) * 0.22;
     ctx.globalAlpha = blink;
-    text('CLICK OR PRESS SPACE TO PLAY AGAIN', FIELD.width / 2, after + 46, 22, PALETTE.text, 'center', 800);
+    text('CLICK OR PRESS SPACE TO PLAY AGAIN', FIELD.width / 2, after + 96, 22, PALETTE.text, 'center', 800);
     ctx.globalAlpha = 1;
   }
 

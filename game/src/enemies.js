@@ -29,15 +29,21 @@ function budgetQueue(wave, rng) {
   const queue = [];
   let spent = 0;
   let at = 0.6;
+  // Weavers arrive gently: at most two while the player is still learning them.
+  let weavers = 0;
+  const weaverCap = wave <= 7 ? 2 : 99;
   while (spent < budget) {
-    const affordable = kinds.filter((kind) => COST[kind] <= budget - spent);
+    let affordable = kinds.filter((kind) => COST[kind] <= budget - spent);
+    if (weavers >= weaverCap) affordable = affordable.filter((kind) => kind !== 'weaver');
     const kind = rng.pick(affordable);
+    if (kind === 'weaver') weavers += 1;
     spent += COST[kind];
     queue.push({ kind, at, elite: maybeElite(wave, rng) });
     // Later waves spawn faster and in small clusters.
     at += rng.range(0.55, 1.15) * Math.max(0.45, 1 - wave * 0.05);
     if (rng.chance(0.25)) {
       queue.push({ kind, at: at + 0.15, elite: maybeElite(wave, rng) });
+      if (kind === 'weaver') weavers += 1;
       spent += COST[kind];
     }
   }

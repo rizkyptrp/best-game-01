@@ -81,6 +81,7 @@ export function createWorld(rng) {
     bossKind: null,
     bossAt: 0,
     bossSpawned: false,
+    warned: {},
     shopCards: [],
     owned: {},
     shake: 0,
@@ -158,6 +159,15 @@ export function createWorld(rng) {
   function spawnEnemy(kind, elite = false) {
     const at = spawnPoint(rng);
     state.enemies.push(makeEnemy(kind, at.x, at.y, elite));
+    // A new kind announces its trick the first time it appears, so the
+    // player learns the counter instead of losing the crystal to it.
+    if (kind === 'weaver' && !state.warned.weaver) {
+      state.warned.weaver = true;
+      floater(FIELD.width / 2, 150, 'A GLOOMWEAVER — IT SHOOTS THE CRYSTAL FROM AFAR', '#ff7ad9', 17);
+    } else if (kind === 'sunder' && !state.warned.sunder) {
+      state.warned.sunder = true;
+      floater(FIELD.width / 2, 150, 'A SUNDERLING — IT SPLITS INTO WISPS WHEN SLAIN', '#c86bff', 17);
+    }
   }
 
   function dropShards(x, y, count) {
@@ -774,6 +784,7 @@ export function createWorld(rng) {
       state.bossKind = null;
       state.bossAt = 0;
       state.bossSpawned = false;
+      state.warned = {};
       state.shopCards = [];
       state.owned = {};
       state.shake = 0;

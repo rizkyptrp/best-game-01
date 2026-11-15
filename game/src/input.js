@@ -12,6 +12,7 @@ export const ACTION_BUY_1 = 1 << 3;
 export const ACTION_BUY_2 = 1 << 4;
 export const ACTION_BUY_3 = 1 << 5;
 export const ACTION_DASH = 1 << 6;
+export const ACTION_ENDLESS = 1 << 7;
 
 /** Keys the game owns: their browser defaults (scrolling, find) are suppressed. */
 const HANDLED = new Set(['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'KeyW', 'KeyA', 'KeyS', 'KeyD']);
@@ -37,6 +38,7 @@ export function createInput(canvas) {
     if (event.code === 'Space' || event.code === 'Enter') actions |= ACTION_CONFIRM;
     else if (event.code === 'KeyP' || event.code === 'Escape') actions |= ACTION_PAUSE;
     else if (event.code === 'KeyM') actions |= ACTION_MUTE;
+    else if (event.code === 'KeyE') actions |= ACTION_ENDLESS;
     else if (event.code === 'ShiftLeft' || event.code === 'ShiftRight') actions |= ACTION_DASH;
     else if (event.code === 'Digit1') actions |= ACTION_BUY_1;
     else if (event.code === 'Digit2') actions |= ACTION_BUY_2;

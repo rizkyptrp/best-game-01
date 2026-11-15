@@ -30,6 +30,7 @@ import {
   ACTION_BUY_3,
   ACTION_CONFIRM,
   ACTION_DASH,
+  ACTION_ENDLESS,
   ACTION_MUTE,
   ACTION_PAUSE,
   createInput,
@@ -44,6 +45,7 @@ import {
   SCREEN_WIN,
   createRenderer,
   shopLayout,
+  winLayout,
 } from './render.js';
 import { stageShot } from './shots.js';
 
@@ -145,6 +147,16 @@ function runGame() {
     announce(`Wave ${world.state.wave}.`);
   }
 
+  /** Victory unlocks Endless: the run continues past wave 10, harder each wave. */
+  function startEndless() {
+    audio.unlock();
+    audio.waveStart();
+    world.beginWave(world.state.wave + 1);
+    shopMessage = '';
+    screen = SCREEN_PLAY;
+    announce(`Endless. Wave ${world.state.wave}.`);
+  }
+
   function endRun(won) {
     if (world.state.score > best) {
       best = world.state.score;
@@ -192,8 +204,14 @@ function runGame() {
     const click = input.takeClick();
     if (actions & ACTION_MUTE) toggleMute();
     if (actions & ACTION_DASH) dashQueued = true;
-    if (screen === SCREEN_TITLE || screen === SCREEN_OVER || screen === SCREEN_WIN) {
+    if (screen === SCREEN_TITLE || screen === SCREEN_OVER) {
       if (actions & ACTION_CONFIRM) startGame();
+    } else if (screen === SCREEN_WIN) {
+      // A click on the Endless button (or E) keeps the run going past wave
+      // 10; any other confirm restarts from wave 1.
+      if (click && clickIn(winLayout().endless, click)) startEndless();
+      else if (actions & ACTION_ENDLESS) startEndless();
+      else if (actions & ACTION_CONFIRM) startGame();
     } else if (screen === SCREEN_PLAY) {
       if (actions & ACTION_PAUSE) {
         screen = SCREEN_PAUSED;
