@@ -91,6 +91,9 @@ function runShot(name) {
     enemiesLeft: world.enemiesLeft(),
     shopMessage: '',
   };
+  // A staged frame is still: the renderer's shake is random per paint, so a
+  // shaking frame would retake differently every time. Settle it first.
+  world.state.shake = 0;
   let painted = 0;
   function paint() {
     renderer.draw(world.state, scene.screen, ui);
