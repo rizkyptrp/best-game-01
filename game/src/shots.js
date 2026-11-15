@@ -290,5 +290,5 @@ export function stageShot(name, world) {
   }
   world.reset();
   simulate(world, TITLE_SECONDS, null);
-  return { screen: SCREEN_TITLE, best: 2450 };
+  return { screen: SCREEN_TITLE, best: 68300 };
 }

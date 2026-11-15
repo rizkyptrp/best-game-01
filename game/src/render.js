@@ -618,7 +618,9 @@ export function createRenderer(canvas) {
       ctx.fill();
     }
     for (const enemy of state.enemies) drawEnemy(enemy, state.time);
-    drawPlayer(state);
+    // The warden rests out of sight on the title screen: the crystal and the
+    // title carry that frame, and the hero appears when the run begins.
+    if (state.phase !== 'ambient') drawPlayer(state);
     for (const bullet of state.bullets) {
       // A short trail along the shot's path, then its bright head.
       const speed = Math.hypot(bullet.vx, bullet.vy) || 1;
@@ -880,6 +882,14 @@ export function createRenderer(canvas) {
     dawn.addColorStop(1, 'rgba(255, 209, 102, 0)');
     ctx.fillStyle = dawn;
     ctx.fillRect(0, 0, FIELD.width, FIELD.height);
+    // The crystal burns bright again: its light shines through the dim.
+    const rekindled = ctx.createRadialGradient(CRYSTAL.x, CRYSTAL.y, 10, CRYSTAL.x, CRYSTAL.y, 200);
+    rekindled.addColorStop(0, 'rgba(184, 241, 255, 0.5)');
+    rekindled.addColorStop(1, 'rgba(184, 241, 255, 0)');
+    ctx.fillStyle = rekindled;
+    ctx.beginPath();
+    ctx.arc(CRYSTAL.x, CRYSTAL.y, 200, 0, TAU);
+    ctx.fill();
     text('DAWN RESTORED', FIELD.width / 2, 150, 56, PALETTE.gold, 'center', 800);
     text('The Hollow Maw is unmade. The crystal burns bright again.', FIELD.width / 2, 202, 18, PALETTE.text, 'center', 500, FONT.body);
     text(`SCORE  ${state.score.toLocaleString('en-US')}`, FIELD.width / 2, 262, 30, PALETTE.gold, 'center', 800);
