@@ -98,6 +98,7 @@ function runShot(name) {
 function runGame() {
   const input = createInput(canvas);
   const audio = createAudio();
+  world.reset();
   let screen = SCREEN_TITLE;
   let best = readBest();
   let muted = readStored(MUTE_KEY, '0') === '1';

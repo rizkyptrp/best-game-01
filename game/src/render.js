@@ -260,8 +260,24 @@ export function createRenderer(canvas) {
       ctx.arc(0, 0, r * 0.2, 0, TAU);
       ctx.fill();
     } else if (enemy.kind === 'husk' || enemy.kind === 'brute') {
-      // A chunky hexagon, cracked and heavy.
+      // A chunky hexagon, cracked and heavy. The Gloombrute wears a crown of spikes.
       ctx.rotate(enemy.t * 0.4);
+      if (enemy.kind === 'brute') {
+        ctx.fillStyle = '#ff8fa3';
+        for (let i = 0; i < 8; i += 1) {
+          const a = (i / 8) * TAU;
+          ctx.save();
+          ctx.rotate(a);
+          ctx.beginPath();
+          ctx.moveTo(r * 0.95, -r * 0.16);
+          ctx.lineTo(r * 1.45, 0);
+          ctx.lineTo(r * 0.95, r * 0.16);
+          ctx.closePath();
+          ctx.fill();
+          ctx.restore();
+        }
+      }
+      ctx.fillStyle = enemy.flash > 0 ? '#ffffff' : enemy.color;
       ctx.beginPath();
       for (let i = 0; i < 6; i += 1) {
         const a = (i / 6) * TAU;
@@ -472,14 +488,14 @@ export function createRenderer(canvas) {
   }
 
   function statsGrid(state, y) {
-    const accuracy = state.shotsFired > 0 ? Math.round((state.shotsHit / Math.max(1, state.shotsFired)) * 100) : 0;
     const minutes = Math.floor(state.runTime / 60);
     const seconds = Math.floor(state.runTime % 60);
+    const upgrades = Object.values(state.owned).reduce((n, c) => n + c, 0);
     const rows = [
       ['Waves cleared', `${state.phase === 'won' ? WAVES : Math.max(0, state.wave - (state.phase === 'shop' ? 0 : 1))} / ${WAVES}`],
       ['Foes slain', String(state.kills)],
       ['Shards gathered', String(state.shardsCollected)],
-      ['Shot accuracy', `${accuracy}%`],
+      ['Upgrades taken', String(upgrades)],
       ['Time survived', `${minutes}:${String(seconds).padStart(2, '0')}`],
     ];
     rows.forEach(([label, value], i) => {

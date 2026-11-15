@@ -62,6 +62,11 @@ function autopilot(state) {
       my += (bolt.vx / speed) * 1.5;
     }
   }
+  // Stay in the frame: near an edge, steer back toward the middle.
+  if (player.x < 220) mx += 1.2;
+  if (player.x > FIELD.width - 220) mx -= 1.2;
+  if (player.y < 180) my += 1.2;
+  if (player.y > FIELD.height - 180) my -= 1.2;
   const len = Math.hypot(mx, my);
   if (len > 1) {
     mx /= len;
@@ -93,10 +98,10 @@ export function stageShot(name, world) {
     world.beginWave(3);
     simulate(world, PLAY_SECONDS, (state) => state.phase !== 'combat');
     if (world.state.phase === 'shop') {
-      // Wave three fell fast: take the frame from wave five, just after the
-      // Gloombrute has arrived and the field is at its busiest.
+      // Wave three fell fast: take the frame from wave five, once the
+      // Gloombrute has walked in from the edge and the field is at its busiest.
       world.beginWave(5);
-      simulate(world, 7, null);
+      simulate(world, 10, null);
     }
     if (world.state.phase === 'lost' || world.state.enemies.length < 3) {
       // The pilot died or the field thinned out: restage and take the frame earlier.
@@ -156,7 +161,11 @@ export function stageShot(name, world) {
       if (state.phase === 'won' || state.phase === 'lost') break;
       world.step(STEP, autopilot(state));
     }
-    if (world.state.phase === 'won') return { screen: SCREEN_WIN, best: world.state.score };
+    if (world.state.phase === 'won') {
+      // Let the battle's aftermath settle before the frame is taken.
+      simulate(world, 1.5, null);
+      return { screen: SCREEN_WIN, best: world.state.score };
+    }
     // The full run fell short: stage the final wave alone with a stronger build.
     world.reset();
     const s2 = world.state.stats;
@@ -193,6 +202,7 @@ export function stageShot(name, world) {
         simulate(world, 10, (state) => state.phase !== 'combat');
       }
     }
+    if (world.state.phase === 'won') simulate(world, 1.5, null);
     return { screen: SCREEN_WIN, best: world.state.score };
   }
   world.reset();
