@@ -1,7 +1,8 @@
 // Keyboard and mouse, read as state each frame plus edge-triggered actions
 // the game consumes once. Movement is WASD or arrows; aiming follows the
 // mouse; firing is a held mouse button or a held Space (which auto-aims at the
-// nearest enemy, so the game is playable on keyboard alone).
+// nearest enemy, so the game is playable on keyboard alone); dashing is Shift
+// or the right mouse button.
 import { toLogical, viewTransform } from './view.js';
 
 export const ACTION_CONFIRM = 1 << 0;
@@ -10,6 +11,7 @@ export const ACTION_MUTE = 1 << 2;
 export const ACTION_BUY_1 = 1 << 3;
 export const ACTION_BUY_2 = 1 << 4;
 export const ACTION_BUY_3 = 1 << 5;
+export const ACTION_DASH = 1 << 6;
 
 /** Keys the game owns: their browser defaults (scrolling, find) are suppressed. */
 const HANDLED = new Set(['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'KeyW', 'KeyA', 'KeyS', 'KeyD']);
@@ -35,6 +37,7 @@ export function createInput(canvas) {
     if (event.code === 'Space' || event.code === 'Enter') actions |= ACTION_CONFIRM;
     else if (event.code === 'KeyP' || event.code === 'Escape') actions |= ACTION_PAUSE;
     else if (event.code === 'KeyM') actions |= ACTION_MUTE;
+    else if (event.code === 'ShiftLeft' || event.code === 'ShiftRight') actions |= ACTION_DASH;
     else if (event.code === 'Digit1') actions |= ACTION_BUY_1;
     else if (event.code === 'Digit2') actions |= ACTION_BUY_2;
     else if (event.code === 'Digit3') actions |= ACTION_BUY_3;
@@ -51,6 +54,11 @@ export function createInput(canvas) {
   }
 
   function onMouseDown(event) {
+    // The right button dashes; the menu it would open is suppressed below.
+    if (event.button === 2) {
+      actions |= ACTION_DASH;
+      return;
+    }
     if (event.button !== 0) return;
     const at = logicalFromEvent(event);
     mouseX = at.x;
@@ -74,6 +82,7 @@ export function createInput(canvas) {
   window.addEventListener('blur', onBlur);
   canvas.addEventListener('mousemove', onMouseMove);
   canvas.addEventListener('mousedown', onMouseDown);
+  canvas.addEventListener('contextmenu', (event) => event.preventDefault());
   window.addEventListener('mouseup', onMouseUp);
 
   return {

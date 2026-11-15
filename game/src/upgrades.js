@@ -1,7 +1,6 @@
 // The upgrade cards offered between waves. Each card has a shard cost and an
 // effect on the warden's build; some stack, some are one-off. The shop rolls
 // three distinct cards a visit, so every run's build is a little different.
-import { CRYSTAL } from './config.js';
 
 /**
  * The catalogue. `max` is how many times a run may take it; `apply` mutates
@@ -58,10 +57,29 @@ export const UPGRADES = [
     apply(stats) { stats.regen += 1; return 'Slow mend!'; },
   },
   {
+    id: 'orbit', name: 'Orbit Blades', cost: 20, max: 2,
+    desc: '+1 blade orbiting the warden',
+    apply(stats) { stats.orbiters += 1; return 'A blade takes orbit!'; },
+  },
+  {
+    id: 'aegis', name: 'Crystal Aegis', cost: 16, max: 2,
+    desc: '+40 crystal max health, mend 40',
+    apply(_stats, world) {
+      world.crystalMaxHp += 40;
+      world.crystalHp = Math.min(world.crystalMaxHp, world.crystalHp + 40);
+      return 'The crystal hardens!';
+    },
+  },
+  {
+    id: 'step', name: 'Swiftstep', cost: 10, max: 2,
+    desc: 'Dash recharges 35% faster',
+    apply(stats) { stats.dashCooldown = Math.max(1.2, stats.dashCooldown * 0.65); return 'Swifter steps!'; },
+  },
+  {
     id: 'repair', name: 'Mend the Light', cost: 15, max: 99,
     desc: 'Repair the crystal +40 HP',
     apply(_stats, world) {
-      world.crystalHp = Math.min(CRYSTAL.maxHp, world.crystalHp + 40);
+      world.crystalHp = Math.min(world.crystalMaxHp, world.crystalHp + 40);
       return 'Crystal mended!';
     },
   },

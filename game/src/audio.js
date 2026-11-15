@@ -101,6 +101,16 @@ export function createAudio() {
     shoot() {
       tone({ type: 'square', from: 880, to: 520, seconds: 0.07, volume: 0.06 });
     },
+    dash() {
+      noise({ seconds: 0.16, volume: 0.16, low: 2400 });
+      tone({ type: 'sine', from: 300, to: 720, seconds: 0.14, volume: 0.1 });
+    },
+    combo(level) {
+      // The chime climbs with the multiplier: ×2 starts low, ×5 rings high.
+      const base = 520 + level * 90;
+      tone({ type: 'triangle', from: base, seconds: 0.1, volume: 0.14 });
+      tone({ type: 'triangle', from: base * 1.5, seconds: 0.16, volume: 0.14, when: 0.07 });
+    },
     enemyHit() {
       tone({ type: 'sawtooth', from: 320, to: 180, seconds: 0.06, volume: 0.08 });
     },

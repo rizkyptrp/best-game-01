@@ -5,8 +5,8 @@
 //
 // Phases: 'ambient' (the title screen's drifting wisps, no combat), 'combat',
 // 'shop' (frozen but for particles), 'won' and 'lost'.
-import { BOLT, CRYSTAL, ENEMY, FIELD, PLAYER, SHARD, WAVES, WAVE_CLEAR_SCORE, WAVE_SCALING } from './config.js';
-import { wavePlan } from './enemies.js';
+import { BOLT, COMBO, CRYSTAL, DASH, ELITE, ENEMY, FIELD, ORBITER, PLAYER, SHARD, WAVES, WAVE_CLEAR_SCORE, WAVE_SCALING, WEAVER_BOLT } from './config.js';
+import { wavePlan, waveSubtitle, waveTitle } from './enemies.js';
 import { rollShop } from './upgrades.js';
 
 export const EVENT_SHOOT = 1 << 0;
@@ -20,6 +20,13 @@ export const EVENT_WAVE_CLEAR = 1 << 7;
 export const EVENT_WAVE_START = 1 << 8;
 export const EVENT_OVER = 1 << 9;
 export const EVENT_WIN = 1 << 10;
+export const EVENT_DASH = 1 << 11;
+export const EVENT_COMBO_UP = 1 << 12;
+
+/** The score multiplier a kill streak of `combo` kills earns (×1 to ×5). */
+export function comboMultiplier(combo) {
+  return Math.min(COMBO.maxMult, 1 + Math.floor(combo / COMBO.killsPerStep));
+}
 
 const TAU = Math.PI * 2;
 const ARENA_MARGIN = 26;
@@ -54,6 +61,15 @@ export function createWorld(rng) {
     player: null,
     stats: null,
     crystalHp: CRYSTAL.maxHp,
+    crystalMaxHp: CRYSTAL.maxHp,
+    crystalFlash: 0,
+    combo: 0,
+    comboTimer: 0,
+    comboBest: 0,
+    dashT: 0,
+    dashCooldown: 0,
+    dashX: 0,
+    dashY: 0,
     enemies: [],
     bullets: [],
     bolts: [],
@@ -105,40 +121,43 @@ export function createWorld(rng) {
     state.floaters.push({ x, y, text, color, size, life: 0.9 });
   }
 
-  function makeEnemy(kind, x, y) {
+  function makeEnemy(kind, x, y, elite = false) {
     const def = ENEMY[kind];
     const hpScale = 1 + WAVE_SCALING.hpPerWave * Math.max(0, state.wave - 1);
     const speedScale = 1 + WAVE_SCALING.speedPerWave * Math.max(0, state.wave - 1);
-    const hp = Math.round(def.hp * hpScale);
+    const hp = Math.round(def.hp * hpScale * (elite ? ELITE.hp : 1));
     return {
       id: nextId++,
       kind,
+      elite,
       x, y,
       vx: 0, vy: 0,
       hp, maxHp: hp,
-      radius: def.radius,
+      radius: def.radius * (elite ? ELITE.radius : 1),
       speed: def.speed * speedScale,
       touch: def.touch,
       crystal: def.crystal,
-      score: def.score,
-      shards: def.shards,
+      score: def.score * (elite ? ELITE.score : 1),
+      shards: def.shards * (elite ? ELITE.shards : 1),
       color: def.color,
       t: rng.range(0, TAU),
       state: 'chase',
       stateT: 0,
       dashX: 0, dashY: 0,
       shootT: rng.range(1, 2),
+      spreadT: 2,
       burstT: 4,
       summoned: 0,
       flash: 0,
       recoilT: 0,
+      orbHitT: 0,
       spawnT: 0.35,
     };
   }
 
-  function spawnEnemy(kind) {
+  function spawnEnemy(kind, elite = false) {
     const at = spawnPoint(rng);
-    state.enemies.push(makeEnemy(kind, at.x, at.y));
+    state.enemies.push(makeEnemy(kind, at.x, at.y, elite));
   }
 
   function dropShards(x, y, count) {
@@ -167,18 +186,46 @@ export function createWorld(rng) {
   function killEnemy(enemy, events) {
     enemy.hp = 0;
     state.kills += 1;
-    state.score += enemy.score;
-    burst(enemy.x, enemy.y, enemy.color, enemy.kind === 'maw' || enemy.kind === 'brute' ? 46 : 18, 260, 4);
+    // The streak grows with every kill inside the window, and the score
+    // multiplier with the streak; a rising multiplier is announced aloud.
+    const before = comboMultiplier(state.combo);
+    state.combo += 1;
+    state.comboTimer = COMBO.window;
+    state.comboBest = Math.max(state.comboBest, state.combo);
+    const mult = comboMultiplier(state.combo);
+    state.score += enemy.score * mult;
+    burst(enemy.x, enemy.y, enemy.color, enemy.kind === 'maw' || enemy.kind === 'brute' || enemy.kind === 'herald' ? 46 : 18, 260, 4);
     burst(enemy.x, enemy.y, '#ffffff', 6, 180, 3);
     dropShards(enemy.x, enemy.y, enemy.shards);
-    floater(enemy.x, enemy.y - enemy.radius - 12, `+${enemy.score}`, '#ffd166', 16);
-    state.shake = Math.max(state.shake, enemy.kind === 'maw' ? 16 : enemy.kind === 'brute' ? 10 : 4);
-    if (enemy.kind === 'maw' || enemy.kind === 'brute') events.value |= EVENT_BIG_KILL;
+    floater(enemy.x, enemy.y - enemy.radius - 12, `+${enemy.score * mult}`, '#ffd166', 16);
+    if (mult > before) {
+      floater(enemy.x, enemy.y - enemy.radius - 34, `COMBO ×${mult}`, '#7ff0ff', 18);
+      events.value |= EVENT_COMBO_UP;
+    }
+    state.shake = Math.max(state.shake, enemy.kind === 'maw' ? 16 : enemy.kind === 'brute' || enemy.kind === 'herald' ? 10 : 4);
+    if (enemy.kind === 'maw' || enemy.kind === 'brute' || enemy.kind === 'herald') events.value |= EVENT_BIG_KILL;
     else events.value |= EVENT_KILL;
+    if (enemy.kind === 'sunder') {
+      // A sunderling breaks apart into two wisps that must be finished off.
+      for (let i = 0; i < 2; i += 1) {
+        const angle = rng.range(0, TAU);
+        state.enemies.push(makeEnemy('wisp', enemy.x + Math.cos(angle) * 22, enemy.y + Math.sin(angle) * 22));
+      }
+    }
     if (enemy.kind === 'maw' && state.wave === WAVES) {
       state.phase = 'won';
       state.score += 2000;
       events.value |= EVENT_WIN;
+      // The void dissolves with its master: what is left on the field bursts
+      // into light instead of lingering behind the victory screen. (The
+      // bullets and bolts are cleared by updateCombat once its loops finish:
+      // emptying them here would break the bullet loop mid-flight.)
+      for (const other of state.enemies) {
+        if (other.hp > 0) {
+          burst(other.x, other.y, other.color, 12, 220, 4);
+          other.hp = 0;
+        }
+      }
     }
   }
 
@@ -187,6 +234,9 @@ export function createWorld(rng) {
     if (player.invuln > 0 || state.phase !== 'combat') return;
     player.hp -= amount;
     player.invuln = PLAYER.invulnerable;
+    // A hit breaks the streak: the multiplier is earned by clean play.
+    state.combo = 0;
+    state.comboTimer = 0;
     state.shake = Math.max(state.shake, 8);
     burst(player.x, player.y, '#ff5d73', 14, 220, 4);
     events.value |= EVENT_PLAYER_HIT;
@@ -202,6 +252,7 @@ export function createWorld(rng) {
   function hurtCrystal(amount, events) {
     if (state.phase !== 'combat') return;
     state.crystalHp -= amount;
+    state.crystalFlash = 1;
     state.shake = Math.max(state.shake, 10);
     burst(CRYSTAL.x, CRYSTAL.y, '#b8f1ff', 16, 240, 4);
     events.value |= EVENT_CRYSTAL_HIT;
@@ -214,14 +265,14 @@ export function createWorld(rng) {
     }
   }
 
-  /** A spitter's bolt, or one of the Maw's radial burst. */
-  function fireBolt(x, y, angle, speed = BOLT.speed) {
+  /** A spitter's bolt, a weaver's shot at the crystal, or one of a boss's radial burst. */
+  function fireBolt(x, y, angle, speed = BOLT.speed, damage = BOLT.damage) {
     state.bolts.push({
       x, y,
       vx: Math.cos(angle) * speed,
       vy: Math.sin(angle) * speed,
       radius: BOLT.radius,
-      damage: BOLT.damage,
+      damage,
       t: 0,
     });
   }
@@ -231,6 +282,7 @@ export function createWorld(rng) {
     enemy.t += dt;
     enemy.flash = Math.max(0, enemy.flash - dt);
     enemy.recoilT = Math.max(0, enemy.recoilT - dt);
+    enemy.orbHitT = Math.max(0, enemy.orbHitT - dt);
     enemy.spawnT = Math.max(0, enemy.spawnT - dt);
     if (enemy.recoilT > 0) {
       enemy.x += enemy.vx * dt;
@@ -286,12 +338,69 @@ export function createWorld(rng) {
         fireBolt(enemy.x, enemy.y, Math.atan2(toPlayer.y, toPlayer.x));
         burst(enemy.x, enemy.y, enemy.color, 3, 90, 3);
       }
+    } else if (enemy.kind === 'sunder') {
+      // A slow, cracking orb that chases the warden and breaks into wisps when slain.
+      const wobble = Math.sin(enemy.t * 2.2) * 0.25;
+      const angle = Math.atan2(toPlayer.y, toPlayer.x) + wobble;
+      enemy.vx = Math.cos(angle) * enemy.speed;
+      enemy.vy = Math.sin(angle) * enemy.speed;
+    } else if (enemy.kind === 'weaver') {
+      // Circles the crystal at range and shoots bolts at it: the one foe that
+      // threatens the objective without ever touching it, so it must be hunted.
+      const orbitR = 360;
+      const radial = distCrystal > orbitR + 30 ? 1 : distCrystal < orbitR - 30 ? -1 : 0;
+      const tangent = Math.sin(enemy.t * 0.5) > 0 ? 1 : -1;
+      const rx = toCrystal.x / distCrystal;
+      const ry = toCrystal.y / distCrystal;
+      let vx = rx * radial * enemy.speed + -ry * tangent * enemy.speed * 0.8;
+      let vy = ry * radial * enemy.speed + rx * tangent * enemy.speed * 0.8;
+      if (distPlayer < 150) {
+        // The warden is close: shy away while it keeps shooting.
+        vx += (-toPlayer.x / distPlayer) * enemy.speed * 0.9;
+        vy += (-toPlayer.y / distPlayer) * enemy.speed * 0.9;
+      }
+      enemy.vx = vx;
+      enemy.vy = vy;
+      enemy.shootT -= dt;
+      if (enemy.shootT <= 0 && distCrystal < 560) {
+        enemy.shootT = rng.range(2.6, 3.2);
+        fireBolt(enemy.x, enemy.y, Math.atan2(toCrystal.y, toCrystal.x), WEAVER_BOLT.speed, WEAVER_BOLT.damage);
+        burst(enemy.x, enemy.y, enemy.color, 4, 110, 3);
+      }
     } else if (enemy.kind === 'husk' || enemy.kind === 'brute') {
       // Marches on the crystal; swats the warden only if they get in the way.
       const target = distPlayer < 110 ? toPlayer : toCrystal;
       const dist = distPlayer < 110 ? distPlayer : distCrystal;
       enemy.vx = (target.x / dist) * enemy.speed;
       enemy.vy = (target.y / dist) * enemy.speed;
+    } else if (enemy.kind === 'herald') {
+      // The Dusk Herald: a lesser Maw — slow pursuit, radial bursts, aimed
+      // three-bolt spreads, and it calls dashers when half spent.
+      enemy.vx = (toPlayer.x / distPlayer) * enemy.speed;
+      enemy.vy = (toPlayer.y / distPlayer) * enemy.speed;
+      enemy.burstT -= dt;
+      if (enemy.burstT <= 0) {
+        enemy.burstT = 4.5;
+        const count = 8;
+        const offset = rng.range(0, TAU);
+        for (let i = 0; i < count; i += 1) fireBolt(enemy.x, enemy.y, offset + (i / count) * TAU, 200);
+        burst(enemy.x, enemy.y, enemy.color, 16, 200, 4);
+      }
+      enemy.spreadT -= dt;
+      if (enemy.spreadT <= 0 && distPlayer < 560) {
+        enemy.spreadT = 2.4;
+        const base = Math.atan2(toPlayer.y, toPlayer.x);
+        for (const off of [-0.22, 0, 0.22]) fireBolt(enemy.x, enemy.y, base + off);
+        burst(enemy.x, enemy.y, enemy.color, 4, 120, 3);
+      }
+      if (enemy.summoned === 0 && enemy.hp < enemy.maxHp * 0.5) {
+        enemy.summoned = 1;
+        for (let i = 0; i < 2; i += 1) {
+          const angle = rng.range(0, TAU);
+          state.enemies.push(makeEnemy('dasher', enemy.x + Math.cos(angle) * 70, enemy.y + Math.sin(angle) * 70));
+        }
+        floater(enemy.x, enemy.y - enemy.radius - 10, 'THE HERALD CALLS FOR AID', '#ff3d81', 17);
+      }
     } else if (enemy.kind === 'maw') {
       // The Hollow Maw: slow pursuit, radial bursts, and it summons wisps as it weakens.
       enemy.vx = (toPlayer.x / distPlayer) * enemy.speed;
@@ -342,6 +451,7 @@ export function createWorld(rng) {
       if (f.life <= 0) state.floaters.splice(i, 1);
     }
     state.shake = Math.max(0, state.shake - 42 * dt);
+    state.crystalFlash = Math.max(0, state.crystalFlash - 1.6 * dt);
     if (state.banner) {
       state.banner.t -= dt;
       if (state.banner.t <= 0) state.banner = null;
@@ -356,20 +466,56 @@ export function createWorld(rng) {
     // Spawning.
     state.spawnTimer += dt;
     while (state.spawnQueue.length > 0 && state.spawnQueue[0].at <= state.spawnTimer) {
-      spawnEnemy(state.spawnQueue.shift().kind);
+      const next = state.spawnQueue.shift();
+      spawnEnemy(next.kind, next.elite);
     }
     if (state.bossKind && !state.bossSpawned && state.spawnTimer >= state.bossAt) {
       state.bossSpawned = true;
       spawnEnemy(state.bossKind);
-      floater(FIELD.width / 2, 120, state.bossKind === 'maw' ? 'THE HOLLOW MAW AWAKENS' : 'THE GLOOMBRUTE ARRIVES', '#ff5d73', 20);
+      floater(FIELD.width / 2, 120, state.bossKind === 'maw' ? 'THE HOLLOW MAW AWAKENS' : state.bossKind === 'herald' ? 'THE DUSK HERALD ARRIVES' : 'THE GLOOMBRUTE ARRIVES', '#ff5d73', 20);
     }
 
-    // The warden: regeneration, mercy time, movement.
+    // The streak fades if the warden stops killing.
+    if (state.comboTimer > 0) {
+      state.comboTimer -= dt;
+      if (state.comboTimer <= 0) state.combo = 0;
+    }
+
+    // The warden: regeneration, mercy time, dash, movement.
     if (stats.regen > 0) player.hp = Math.min(stats.maxHp, player.hp + stats.regen * dt);
     player.invuln = Math.max(0, player.invuln - dt);
     player.fireCooldown = Math.max(0, player.fireCooldown - dt);
-    player.x += control.moveX * stats.speed * dt;
-    player.y += control.moveY * stats.speed * dt;
+    state.dashCooldown = Math.max(0, state.dashCooldown - dt);
+    if (control.dash && state.dashCooldown <= 0 && state.dashT <= 0) {
+      // A dash goes where the warden is moving, or toward the aim when still.
+      let dx = control.moveX;
+      let dy = control.moveY;
+      if (dx === 0 && dy === 0) {
+        dx = player.aimX - player.x;
+        dy = player.aimY - player.y;
+      }
+      const len = Math.hypot(dx, dy) || 1;
+      state.dashX = dx / len;
+      state.dashY = dy / len;
+      state.dashT = DASH.duration;
+      state.dashCooldown = stats.dashCooldown;
+      player.invuln = Math.max(player.invuln, DASH.invuln);
+      burst(player.x, player.y, '#7ff0ff', 10, 220, 3);
+      events.value |= EVENT_DASH;
+    }
+    if (state.dashT > 0) {
+      state.dashT -= dt;
+      player.x += state.dashX * DASH.speed * dt;
+      player.y += state.dashY * DASH.speed * dt;
+      state.particles.push({
+        x: player.x, y: player.y,
+        vx: -state.dashX * 60, vy: -state.dashY * 60,
+        life: 0.3, maxLife: 0.3, size: 5, color: '#7ff0ff',
+      });
+    } else {
+      player.x += control.moveX * stats.speed * dt;
+      player.y += control.moveY * stats.speed * dt;
+    }
     player.x = Math.max(ARENA_MARGIN, Math.min(FIELD.width - ARENA_MARGIN, player.x));
     player.y = Math.max(ARENA_MARGIN, Math.min(FIELD.height - ARENA_MARGIN, player.y));
     // The crystal is solid: the warden slides around it.
@@ -430,6 +576,24 @@ export function createWorld(rng) {
     // Enemies act.
     for (const enemy of state.enemies) updateEnemy(enemy, dt, events);
 
+    // Orbiting blades cut whatever they touch, each foe at most once per swing.
+    if (stats.orbiters > 0) {
+      for (let i = 0; i < stats.orbiters; i += 1) {
+        const angle = state.time * ORBITER.spin * TAU + (i / stats.orbiters) * TAU;
+        const ox = player.x + Math.cos(angle) * ORBITER.radius;
+        const oy = player.y + Math.sin(angle) * ORBITER.radius;
+        for (const enemy of state.enemies) {
+          if (enemy.hp <= 0 || enemy.orbHitT > 0 || enemy.spawnT > 0) continue;
+          if (Math.hypot(enemy.x - ox, enemy.y - oy) < enemy.radius + 10) {
+            enemy.orbHitT = ORBITER.hitCooldown;
+            burst(ox, oy, '#ffd166', 4, 160, 3);
+            events.value |= EVENT_ENEMY_HIT;
+            damageEnemy(enemy, ORBITER.damage, events);
+          }
+        }
+      }
+    }
+
     // The warden's bullets.
     for (let i = state.bullets.length - 1; i >= 0; i -= 1) {
       const bullet = state.bullets[i];
@@ -458,6 +622,11 @@ export function createWorld(rng) {
       if (spent) state.bullets.splice(i, 1);
     }
     state.enemies = state.enemies.filter((enemy) => enemy.hp > 0);
+    // The Maw is unmade: its bolts and the warden's shots fade with it.
+    if (state.phase === 'won') {
+      state.bullets = [];
+      state.bolts = [];
+    }
 
     // Enemy bolts.
     for (let i = state.bolts.length - 1; i >= 0; i -= 1) {
@@ -585,6 +754,15 @@ export function createWorld(rng) {
       state.player = freshPlayer();
       state.stats = { ...PLAYER };
       state.crystalHp = CRYSTAL.maxHp;
+      state.crystalMaxHp = CRYSTAL.maxHp;
+      state.crystalFlash = 0;
+      state.combo = 0;
+      state.comboTimer = 0;
+      state.comboBest = 0;
+      state.dashT = 0;
+      state.dashCooldown = 0;
+      state.dashX = 0;
+      state.dashY = 0;
       state.enemies = [];
       state.bullets = [];
       state.bolts = [];
@@ -616,17 +794,7 @@ export function createWorld(rng) {
       state.enemies = [];
       state.bullets = [];
       state.bolts = [];
-      state.banner = {
-        title: wave === WAVES ? 'WAVE 10 — THE HOLLOW MAW' : wave === 5 ? 'WAVE 5 — THE GLOOMBRUTE' : `WAVE ${wave}`,
-        subtitle: wave === WAVES
-          ? 'Slay the Maw and the dawn returns.'
-          : wave === 5
-            ? 'Something huge stirs in the dark.'
-            : wave === 1
-              ? 'The void sends its wisps. Hold the light.'
-              : 'The dark presses closer.',
-        t: 2.4,
-      };
+      state.banner = { title: waveTitle(wave), subtitle: waveSubtitle(wave), t: 2.4 };
     },
 
     /** Buy a shop card by index; returns its message, or null when it cannot be bought. */

@@ -11,7 +11,9 @@ import { createRandom } from './random.js';
 import {
   createWorld,
   EVENT_BIG_KILL,
+  EVENT_COMBO_UP,
   EVENT_CRYSTAL_HIT,
+  EVENT_DASH,
   EVENT_ENEMY_HIT,
   EVENT_KILL,
   EVENT_OVER,
@@ -20,12 +22,14 @@ import {
   EVENT_SHOOT,
   EVENT_WAVE_CLEAR,
   EVENT_WIN,
+  comboMultiplier,
 } from './world.js';
 import {
   ACTION_BUY_1,
   ACTION_BUY_2,
   ACTION_BUY_3,
   ACTION_CONFIRM,
+  ACTION_DASH,
   ACTION_MUTE,
   ACTION_PAUSE,
   createInput,
@@ -105,6 +109,8 @@ function runGame() {
   let shopMessage = '';
   let accumulator = 0;
   let last = performance.now();
+  // A dash pressed this frame is latched and spent by the next simulation step.
+  let dashQueued = false;
   audio.setMuted(muted);
 
   // Screen readers (and anyone watching the page's text) hear the screen changes.
@@ -185,6 +191,7 @@ function runGame() {
     const actions = input.takeActions();
     const click = input.takeClick();
     if (actions & ACTION_MUTE) toggleMute();
+    if (actions & ACTION_DASH) dashQueued = true;
     if (screen === SCREEN_TITLE || screen === SCREEN_OVER || screen === SCREEN_WIN) {
       if (actions & ACTION_CONFIRM) startGame();
     } else if (screen === SCREEN_PLAY) {
@@ -210,6 +217,8 @@ function runGame() {
 
   function playSounds(events) {
     if (events & EVENT_SHOOT) audio.shoot();
+    if (events & EVENT_DASH) audio.dash();
+    if (events & EVENT_COMBO_UP) audio.combo(comboMultiplier(world.state.combo));
     if (events & EVENT_ENEMY_HIT) audio.enemyHit();
     if (events & EVENT_KILL) audio.explode(false);
     if (events & EVENT_BIG_KILL) audio.explode(true);
@@ -225,6 +234,8 @@ function runGame() {
     }
     const move = input.move();
     const aim = input.aim();
+    const dash = dashQueued;
+    dashQueued = false;
     const events = world.step(STEP, {
       moveX: move.x,
       moveY: move.y,
@@ -232,6 +243,7 @@ function runGame() {
       aimY: aim.y,
       firing: input.firing(),
       autoAim: input.firingWithKeyboard(),
+      dash,
     });
     playSounds(events);
     if (events & EVENT_WIN) endRun(true);
